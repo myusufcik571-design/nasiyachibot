@@ -362,7 +362,7 @@ seller_owner_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="💸 Nasiya yozish"), KeyboardButton(text="💰 To'lov qabul qilish")],
     [KeyboardButton(text="📤 Qarzdorga xabar"), KeyboardButton(text="📊 Hisobotlar")],
     [KeyboardButton(text="👥 A'zo odamlar"), KeyboardButton(text="🔐 Kabinet (Xodimlar)")],
-    [KeyboardButton(text="📊 Balansni tekshirish")]
+    [KeyboardButton(text="📊 Balansni tekshirish"), KeyboardButton(text="✏️ Profilni tahrirlash")]
 ], resize_keyboard=True)
 
 # Seller KB for STAFF (NO Cabinet)
@@ -1207,7 +1207,7 @@ async def cabinet_help(msg: Message):
     
     await msg.answer("🆘 <b>Yordam Markazi</b>\n\nBot bo'yicha savol yoki muammolar bo'lsa, Bot Adminiga murojaat qiling:\n\n👨‍💻 <b>Admin:</b> @xzzz911", parse_mode="HTML")
 
-@router.message(F.text == "✏️ Do'kon ma'lumotlarini o'zgartirish")
+@router.message(F.text.in_({"✏️ Do'kon ma'lumotlarini o'zgartirish", "✏️ Profilni tahrirlash"}))
 async def edit_store_menu(msg: Message):
     user = await db_get_user(msg.from_user.id)
     if not user or not user[6]: # Check is_owner
