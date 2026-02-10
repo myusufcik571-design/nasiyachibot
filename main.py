@@ -796,7 +796,7 @@ async def back_to_main(msg: Message):
 
     # Store Staff/Owner logic
     if user[4] == 'admin':
-        kb = seller_owner_kb if user[8] else seller_staff_kb
+        kb = seller_owner_kb if user[6] else seller_staff_kb
         await msg.answer("Bosh menyu:", reply_markup=kb)
     else:
         await msg.answer("Bosh menyu:", reply_markup=buyer_kb)
@@ -1032,7 +1032,7 @@ async def back_to_main_menu_consolidated(msg: Message):
         if is_owner:
             kb = owner_kb
         # If Store Owner
-        elif user[8]: 
+        elif user[6]: 
             kb = seller_owner_kb
         # If Staff
         else:
@@ -1130,7 +1130,7 @@ async def unblock_user_handler(call: CallbackQuery, bot: Bot):
 @router.message(F.text == "🔐 Kabinet (Xodimlar)")
 async def cabinet_entry(msg: Message):
     user = await db_get_user(msg.from_user.id)
-    if not user or not user[8]: # Check is_owner
+    if not user or not user[6]: # Check is_owner
          return
     await msg.answer("🗄 Kabinet Menyu:", reply_markup=cabinet_kb)
 
@@ -1142,7 +1142,7 @@ async def cabinet_entry(msg: Message):
 @router.message(F.text == "👥 Xodimlar ro'yxati")
 async def show_cabinet_staff(msg: Message):
     user = await db_get_user(msg.from_user.id)
-    if not user or not user[8]: 
+    if not user or not user[6]: 
         await msg.answer("Ruxsat yo'q.")
         return
 
@@ -1171,7 +1171,7 @@ async def show_cabinet_staff(msg: Message):
 @router.message(F.text == "📞 Yordam (Admin)")
 async def cabinet_help(msg: Message):
     user = await db_get_user(msg.from_user.id)
-    if not user or not user[8]: return
+    if not user or not user[6]: return
     
     await msg.answer("🆘 <b>Yordam Markazi</b>\n\nBot bo'yicha savol yoki muammolar bo'lsa, Bot Adminiga murojaat qiling:\n\n👨‍💻 <b>Admin:</b> @xzzz911", parse_mode="HTML")
 
@@ -1184,7 +1184,7 @@ async def kick_staff_handler(call: CallbackQuery, bot: Bot):
     
     # Verify owner permission again
     owner = await db_get_user(call.from_user.id)
-    if not owner or not owner[8]:
+    if not owner or not owner[6]:
         await call.answer("Huquqingiz yo'q", show_alert=True)
         return
 
