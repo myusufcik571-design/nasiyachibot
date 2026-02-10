@@ -30,7 +30,7 @@ import re
 # KONFIGURATSIYA
 # -----------------------------------------------------------------------------
 load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8480888397:AAHx6CmWOkOqZlzKsaB_Zxng3ygBSylUahE")
 # Agar Railway'da bo'lsak, DB_PATH environment variable orqali bazani ko'rsatamiz
 # Default: shop_nasiya_v5.db (lokal kompyuter uchun)
 DB_NAME = os.getenv("DB_PATH", "shop_nasiya_v5.db") 
