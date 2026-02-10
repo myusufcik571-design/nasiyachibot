@@ -141,6 +141,22 @@ async def db_link_customer(phone, tg_id):
         await db.execute("UPDATE customers SET telegram_id = ? WHERE phone LIKE ?", (tg_id, search_phone))
         await db.commit()
 
+async def db_promote_to_staff(store_name, phone):
+    async with aiosqlite.connect(DB_NAME) as db:
+        short_phone = phone[-9:]
+        # Find user by phone
+        async with db.execute("SELECT telegram_id, role FROM users WHERE phone LIKE ?", (f"%{short_phone}",)) as cur:
+            user = await cur.fetchone()
+            
+        if not user: return "not_found"
+        if user[1] == 'admin': return "already_admin"
+        if user[1] == 'blocked': return "blocked"
+        
+        # Promote
+        await db.execute("UPDATE users SET role = 'admin', store_name = ?, is_owner = 0 WHERE telegram_id = ?", (store_name, user[0]))
+        await db.commit()
+        return user[0] # Return TG ID to notify
+
 async def db_get_my_customers(seller_id):
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT id, full_name, balance, telegram_id, phone FROM customers WHERE seller_id = ? ORDER BY full_name", (seller_id,)) as cur:
@@ -365,8 +381,9 @@ reports_kb = ReplyKeyboardMarkup(keyboard=[
 
 # Cabinet KB
 cabinet_kb = ReplyKeyboardMarkup(keyboard=[
-    [KeyboardButton(text="👥 Xodimlar ro'yxati"), KeyboardButton(text="✏️ Do'kon ma'lumotlarini o'zgartirish")],
-    [KeyboardButton(text="📞 Yordam (Admin)"), KeyboardButton(text="🔙 Orqaga")]
+    [KeyboardButton(text="👥 Xodimlar ro'yxati"), KeyboardButton(text="➕ Xodim qo'shish")],
+    [KeyboardButton(text="✏️ Do'kon ma'lumotlarini o'zgartirish"), KeyboardButton(text="🔙 Orqaga")],
+    [KeyboardButton(text="📞 Yordam (Admin)")]
 ], resize_keyboard=True)
 
 owner_kb = ReplyKeyboardMarkup(keyboard=[
@@ -938,6 +955,7 @@ class EditNameState(StatesGroup):
 class EditStoreState(StatesGroup):
     waiting_for_store_name = State()
     waiting_for_store_phone = State()
+    waiting_for_staff_phone = State()
 
 @router.callback_query(F.data.startswith("editname_"))
 async def edit_name_start(call: CallbackQuery, state: FSMContext):
@@ -1210,6 +1228,47 @@ async def edit_store_menu(msg: Message):
     ])
     
     await msg.answer(text, reply_markup=kb, parse_mode="HTML")
+
+    await msg.answer(text, reply_markup=kb, parse_mode="HTML")
+
+@router.message(F.text == "➕ Xodim qo'shish")
+async def add_staff_start(msg: Message, state: FSMContext):
+    user = await db_get_user(msg.from_user.id)
+    if not user or not user[6]: # Check is_owner
+         return
+    await msg.answer("👤 Yangi xodimning telefon raqamini yuboring (yoki yozing):\n\n<i>Eslatma: Xodim avval botga kirib, ro'yxatdan o'tgan bo'lishi kerak.</i>", reply_markup=phone_kb)
+    await state.set_state(EditStoreState.waiting_for_staff_phone)
+
+@router.message(EditStoreState.waiting_for_staff_phone)
+async def add_staff_save(msg: Message, state: FSMContext, bot: Bot):
+    phone = None
+    if msg.contact: phone = msg.contact.phone_number
+    elif msg.text: phone = msg.text
+    
+    if not phone:
+        await msg.answer("Iltimos, to'g'ri raqam kiriting.")
+        return
+
+    phone = clean_phone(phone)
+    user = await db_get_user(msg.from_user.id) # Owner
+    store_name = user[5]
+    
+    result = await db_promote_to_staff(store_name, phone)
+    
+    if result == "not_found":
+        await msg.answer("⚠️ Foydalanuvchi topilmadi. U avval botga kirib (/start), oddiy foydalanuvchi sifatida ro'yxatdan o'tishi kerak.", reply_markup=cabinet_kb)
+    elif result == "already_admin":
+        await msg.answer("⚠️ Bu foydalanuvchi allaqachon boshqa do'konda admin yoki sotuvchi.", reply_markup=cabinet_kb)
+    elif result == "blocked":
+        await msg.answer("⚠️ Bu foydalanuvchi bloklangan.", reply_markup=cabinet_kb)
+    else:
+        # Success (result is TG ID)
+        await msg.answer(f"✅ <b>Xodim Muvaffaqiyatli Qo'shildi!</b>\n\nEndi u <b>{store_name}</b> do'koniga kirish huquqiga ega.", parse_mode="HTML", reply_markup=cabinet_kb)
+        try:
+            await bot.send_message(result, f"🎉 <b>Tabriklaymiz!</b>\n\nSiz <b>{store_name}</b> do'koniga Xodim sifatida qo'shildingiz!\nBotdan to'liq foydalanishingiz mumkin.", parse_mode="HTML", reply_markup=seller_staff_kb)
+        except: pass
+    
+    await state.clear()
 
 @router.callback_query(F.data == "edit_store_name")
 async def edit_store_name_start(call: CallbackQuery, state: FSMContext):
