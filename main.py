@@ -280,6 +280,16 @@ async def get_store_owner_id(user_id):
             owner = await cur.fetchone()
             return owner[0] if owner else None
 
+async def db_update_store_name(old_name, new_name):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("UPDATE users SET store_name = ? WHERE store_name = ?", (new_name, old_name))
+        await db.commit()
+
+async def db_update_user_phone(tg_id, new_phone):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("UPDATE users SET phone = ? WHERE telegram_id = ?", (new_phone, tg_id))
+        await db.commit()
+
 def clean_phone(phone):
     if not phone: return None
     return phone.replace('+', '').replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
@@ -355,7 +365,7 @@ reports_kb = ReplyKeyboardMarkup(keyboard=[
 
 # Cabinet KB
 cabinet_kb = ReplyKeyboardMarkup(keyboard=[
-    [KeyboardButton(text="👥 Xodimlar ro'yxati")],
+    [KeyboardButton(text="👥 Xodimlar ro'yxati"), KeyboardButton(text="✏️ Do'kon ma'lumotlarini o'zgartirish")],
     [KeyboardButton(text="📞 Yordam (Admin)"), KeyboardButton(text="🔙 Orqaga")]
 ], resize_keyboard=True)
 
@@ -925,6 +935,10 @@ async def member_show(call: CallbackQuery):
 class EditNameState(StatesGroup):
     waiting_for_new_name = State()
 
+class EditStoreState(StatesGroup):
+    waiting_for_store_name = State()
+    waiting_for_store_phone = State()
+
 @router.callback_query(F.data.startswith("editname_"))
 async def edit_name_start(call: CallbackQuery, state: FSMContext):
     cid = int(call.data.split("_")[1])
@@ -1174,6 +1188,74 @@ async def cabinet_help(msg: Message):
     if not user or not user[6]: return
     
     await msg.answer("🆘 <b>Yordam Markazi</b>\n\nBot bo'yicha savol yoki muammolar bo'lsa, Bot Adminiga murojaat qiling:\n\n👨‍💻 <b>Admin:</b> @xzzz911", parse_mode="HTML")
+
+@router.message(F.text == "✏️ Do'kon ma'lumotlarini o'zgartirish")
+async def edit_store_menu(msg: Message):
+    user = await db_get_user(msg.from_user.id)
+    if not user or not user[6]: # Check is_owner
+        return
+        
+    store_name = user[5]
+    phone = user[3]
+    phone_f = format_phone_display(phone)
+    
+    text = (f"🏪 <b>Do'kon Sozlamalari</b>\n\n"
+            f"🏷 <b>Nomi:</b> {store_name}\n"
+            f"📞 <b>Tel:</b> {phone_f}\n\n"
+            f"Nimani o'zgartirmoqchisiz?")
+            
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Nomni o'zgartirish", callback_data="edit_store_name")],
+        [InlineKeyboardButton(text="✏️ Telefonni o'zgartirish", callback_data="edit_store_phone")]
+    ])
+    
+    await msg.answer(text, reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data == "edit_store_name")
+async def edit_store_name_start(call: CallbackQuery, state: FSMContext):
+    await call.message.delete()
+    await call.message.answer("🏪 Yangi do'kon nomini kiriting:", reply_markup=cancel_kb)
+    await state.set_state(EditStoreState.waiting_for_store_name)
+
+@router.message(EditStoreState.waiting_for_store_name)
+async def edit_store_name_save(msg: Message, state: FSMContext):
+    new_name = msg.text.strip()
+    if len(new_name) < 3:
+        await msg.answer("⚠️ Do'kon nomi kamida 3 harf bo'lishi kerak.")
+        return
+        
+    user = await db_get_user(msg.from_user.id)
+    if user:
+        old_name = user[5]
+        await db_update_store_name(old_name, new_name)
+        await msg.answer(f"✅ Do'kon nomi o'zgartirildi: <b>{new_name}</b>", parse_mode="HTML", reply_markup=cabinet_kb)
+    else:
+        await msg.answer("Xatolik.")
+    await state.clear()
+
+@router.callback_query(F.data == "edit_store_phone")
+async def edit_store_phone_start(call: CallbackQuery, state: FSMContext):
+    await call.message.delete()
+    await call.message.answer("📞 Yangi telefon raqamini yuboring (yoki yozing):", reply_markup=phone_kb) # Reusing phone_kb from registration
+    await state.set_state(EditStoreState.waiting_for_store_phone)
+
+@router.message(EditStoreState.waiting_for_store_phone)
+async def edit_store_phone_save(msg: Message, state: FSMContext):
+    phone = None
+    if msg.contact: phone = msg.contact.phone_number
+    elif msg.text: phone = msg.text
+    
+    if phone:
+        phone = clean_phone(phone)
+        await db_update_user_phone(msg.from_user.id, phone) # Update owner phone
+        
+        # Also link any customers if needed? Usually registration does that.
+        # But here just updating contact info.
+        
+        await msg.answer(f"✅ Telefon raqam yangilandi: <b>{format_phone_display(phone)}</b>", parse_mode="HTML", reply_markup=cabinet_kb)
+        await state.clear()
+    else:
+        await msg.answer("Iltimos, to'g'ri raqam kiriting.")
 
 # --- CHANGE LOGIN/PASS FLOW ---
 
