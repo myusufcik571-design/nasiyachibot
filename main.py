@@ -37,6 +37,7 @@ DB_NAME = os.getenv("DB_PATH", "shop_nasiya_v5.db")
 REMINDER_TIME = "18:00"
 ADMINS = [6104862378, 998999999] 
 ADMIN_USERNAMES = ["xzzz911"] # Admin username (bot egasi)
+WELCOME_VIDEO_ID = None # Videoni yuborgandan keyin bu yerga ID sini yozamiz
 
 logging.basicConfig(level=logging.INFO)
 router = Router()
@@ -417,6 +418,12 @@ async def start(msg: Message, state: FSMContext):
             await msg.answer("⛔️ Sizning hisobingiz bloklangan.\nBotni qayta ishga tushirish uchun Bot Egasi (@xzzz911) bilan bog'laning.")
             return
 
+        # Send Welcome Video if available
+        if WELCOME_VIDEO_ID:
+            try:
+                await msg.answer_video(video=WELCOME_VIDEO_ID, caption="👋 <b>Assalomu alaykum!</b>\n\nQuyida botdan foydalanish bo'yicha qisqacha video qo'llanma:", parse_mode="HTML")
+            except: pass
+
         role_txt = f" ({user[5]})" if user[4] == 'admin' and user[5] else ""
         if user[4] == 'admin':
             is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
@@ -467,6 +474,14 @@ async def shop_choice_handler(msg: Message, state: FSMContext):
     elif msg.text == "🆕 Yangi do'kon ochish":
         await msg.answer("🏪 Yangi do'kon nomini kiriting:", reply_markup=cancel_kb)
         await state.set_state(Form.store_name_input)
+
+# --- HELPER: GET FILE ID ---
+@router.message(F.video | F.animation)
+async def get_file_id(msg: Message):
+    is_admin = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
+    if is_admin:
+        file_id = msg.video.file_id if msg.video else msg.animation.file_id
+        await msg.reply(f"🆔 <b>Fayl ID:</b>\n\n<code>{file_id}</code>\n\n<i>Ushbu ID ni kodga (WELCOME_VIDEO_ID) qo'ying.</i>", parse_mode="HTML")
 
 
 
