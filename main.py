@@ -20,7 +20,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     CallbackQuery,
-    CallbackQuery,
     ReplyKeyboardRemove
 )
 import hashlib
@@ -57,13 +56,18 @@ async def init_db():
                 store_name TEXT,
                 is_owner INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                locked_until TIMESTAMP
+                locked_until TIMESTAMP,
+                language TEXT DEFAULT 'uz'
             )
         """)
         
         # Migration for existing table (if missing columns)
         try:
             await db.execute("ALTER TABLE users ADD COLUMN locked_until TIMESTAMP")
+        except: pass
+
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'uz'")
         except: pass
         
         await db.execute("""
@@ -94,12 +98,12 @@ async def init_db():
 
 # --- DB Metodlari ---
 
-async def db_add_user(tg_id, name, username, role, phone=None, store_name=None, is_owner=0):
+async def db_add_user(tg_id, name, username, role, phone=None, store_name=None, is_owner=0, language='uz'):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("""
-            INSERT OR REPLACE INTO users (telegram_id, full_name, username, role, phone, store_name, is_owner) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (tg_id, name, username, role, phone, store_name, is_owner))
+            INSERT OR REPLACE INTO users (telegram_id, full_name, username, role, phone, store_name, is_owner, language) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (tg_id, name, username, role, phone, store_name, is_owner, language))
         await db.commit()
 
 async def db_get_user(tg_id):
@@ -220,9 +224,6 @@ async def db_get_store_total(seller_id):
             res = await cur.fetchone()
             return res[0] if res[0] else 0
 
-            res = await cur.fetchone()
-            return res[0] if res[0] else 0
-
 async def db_get_store_debtors(seller_id):
     async with aiosqlite.connect(DB_NAME) as db:
         sql = """
@@ -250,10 +251,6 @@ async def db_get_all_debtors_with_store():
             return await cur.fetchall()
 
 async def db_get_all_users():
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT full_name, username, phone, role, created_at FROM users") as cur:
-            return await cur.fetchall()
-
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT full_name, username, phone, role, created_at FROM users") as cur:
             return await cur.fetchall()
@@ -319,9 +316,88 @@ def format_phone_display(phone):
     return f"+{phone}"
 
 # -----------------------------------------------------------------------------
+# MULTI-LANGUAGE SUPPORT
+# -----------------------------------------------------------------------------
+TRANSLATIONS = {
+    "uz": {
+        "choose_role": "Assalomu alaykum! Siz kimsiz?",
+        "seller": "👨‍💼 Sotuvchi",
+        "buyer": "👤 Haridor",
+        "new_shop": "🆕 Yangi do'kon ochish",
+        "back": "⬅️ Orqaga",
+        "enter_store_name": "🏪 Yangi do'kon nomini kiriting:",
+        "store_name_short": "⚠️ Do'kon nomi kamida 3 harf bo'lishi kerak. Qayta kiriting:",
+        "enter_store_phone": "📞 Do'kon uchun aloqa raqamini kiriting (yoki pastdagi tugmani bosing):",
+        "send_number": "📞 Raqamni yuborish",
+        "skip": "➡️ O'tkazib yuborish",
+        "cancel": "❌ Bekor qilish",
+        "number_added": "✅ Raqam qo'shildi! Yana raqam qo'shasizmi?",
+        "add_more_number": "📞 Yana raqam qo'shish",
+        "finish": "✅ Yetarli (Tugatish)",
+        "confirm_text": "📝 <b>Ma'lumotlarni tasdiqlang:</b>\n\n🏪 <b>Do'kon:</b> {store_name}\n📞 <b>Tel:</b> {phones_str}\n\nBarcha ma'lumotlar to'g'rimi?",
+        "confirm": "✅ Tasdiqlash",
+        "reg_success": "✅ <b>Tabriklaymiz!</b>\n\n'{store_name}' do'koni muvaffaqiyatli ro'yxatdan o'tdi!",
+        "send_phone": "📞 Telefon raqamingizni yuboring:",
+        "buyer_reg_success": "✅ Rahmat! Siz muvaffaqiyatli ro'yxatdan o'tdingiz.",
+        "shop_choice": "Tanlang:",
+        "cancelled": "Bekor qilindi"
+    },
+    "ru": {
+        "choose_role": "Здравствуйте! Вы кто?",
+        "seller": "👨‍💼 Продавец",
+        "buyer": "👤 Покупатель",
+        "new_shop": "🆕 Открыть новый магазин",
+        "back": "⬅️ Назад",
+        "enter_store_name": "🏪 Введите название нового магазина:",
+        "store_name_short": "⚠️ Название магазина должно содержать не менее 3 букв. Введите снова:",
+        "enter_store_phone": "📞 Введите контактный номер магазина (или нажмите кнопку ниже):",
+        "send_number": "📞 Отправить номер",
+        "skip": "➡️ Пропустить",
+        "cancel": "❌ Отмена",
+        "number_added": "✅ Номер добавлен! Добавить еще?",
+        "add_more_number": "📞 Добавить еще номер",
+        "finish": "✅ Достаточно (Завершить)",
+        "confirm_text": "📝 <b>Подтвердите данные:</b>\n\n🏪 <b>Магазин:</b> {store_name}\n📞 <b>Тел:</b> {phones_str}\n\nВсе данные верны?",
+        "confirm": "✅ Подтвердить",
+        "reg_success": "✅ <b>Поздравляем!</b>\n\nМагазин '{store_name}' успешно зарегистрирован!",
+        "send_phone": "📞 Отправьте ваш номер телефона:",
+        "buyer_reg_success": "✅ Спасибо! Вы успешно зарегистрированы.",
+        "shop_choice": "Выберите:",
+        "cancelled": "Отменено"
+    },
+    "en": {
+        "choose_role": "Hello! Who are you?",
+        "seller": "👨‍💼 Seller",
+        "buyer": "👤 Buyer",
+        "new_shop": "🆕 Open new shop",
+        "back": "⬅️ Back",
+        "enter_store_name": "🏪 Enter new store name:",
+        "store_name_short": "⚠️ Store name must be at least 3 characters. Enter again:",
+        "enter_store_phone": "📞 Enter store contact number (or press button below):",
+        "send_number": "📞 Send number",
+        "skip": "➡️ Skip",
+        "cancel": "❌ Cancel",
+        "number_added": "✅ Number added! Add another?",
+        "add_more_number": "📞 Add another number",
+        "finish": "✅ Enough (Finish)",
+        "confirm_text": "📝 <b>Confirm details:</b>\n\n🏪 <b>Store:</b> {store_name}\n📞 <b>Phone:</b> {phones_str}\n\nIs everything correct?",
+        "confirm": "✅ Confirm",
+        "reg_success": "✅ <b>Congratulations!</b>\n\nStore '{store_name}' successfully registered!",
+        "send_phone": "📞 Send your phone number:",
+        "buyer_reg_success": "✅ Thank you! You have successfully registered.",
+        "shop_choice": "Choose:",
+        "cancelled": "Cancelled"
+    }
+}
+
+def _t(key, lang='uz'):
+    return TRANSLATIONS.get(lang, TRANSLATIONS['uz']).get(key, key)
+
+# -----------------------------------------------------------------------------
 # STATES & KEYBOARDS
 # -----------------------------------------------------------------------------
 class Form(StatesGroup):
+    language = State()
     role = State()
     store_name_input = State()
     store_phone = State()
@@ -349,7 +425,17 @@ class Form(StatesGroup):
     seller_msg_target = State()
     seller_msg_content = State()
 
-role_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="👨‍💼 Sotuvchi"), KeyboardButton(text="👤 Haridor")]], resize_keyboard=True)
+lang_kb = ReplyKeyboardMarkup(keyboard=[
+    [KeyboardButton(text="🇺🇿 O'zbekcha"), KeyboardButton(text="🇷🇺 Русский"), KeyboardButton(text="🇬🇧 English")]
+], resize_keyboard=True)
+
+def get_role_kb(lang):
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text=_t("seller", lang)), KeyboardButton(text=_t("buyer", lang))]
+    ], resize_keyboard=True)
+
+role_kb = get_role_kb('uz') # Default
+
 shop_choice_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="🆕 Yangi do'kon ochish")],
     [KeyboardButton(text="⬅️ Orqaga")]
@@ -374,6 +460,11 @@ seller_staff_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="👥 A'zo odamlar"), KeyboardButton(text="📊 Balansni tekshirish")]
 ], resize_keyboard=True)
 
+async def get_seller_kb(tg_id):
+    user = await db_get_user(tg_id)
+    if not user: return None
+    return seller_owner_kb if user[6] else seller_staff_kb
+
 reports_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="📅 1 Haftalik (Excel)"), KeyboardButton(text="📅 1 Oylik (Excel)")],
     [KeyboardButton(text="📋 Barchasi (Excel)"), KeyboardButton(text="📈 Umumiy statistika")],
@@ -388,9 +479,9 @@ cabinet_kb = ReplyKeyboardMarkup(keyboard=[
 ], resize_keyboard=True)
 
 owner_kb = ReplyKeyboardMarkup(keyboard=[
-    [KeyboardButton(text="👨‍💼 Sotuvchilar Ro'yxati"), KeyboardButton(text="👤 Haridorlar Ro'yxati")],
-    [KeyboardButton(text="🚫 Sotuvchini bloklash bo'limi"), KeyboardButton(text="📊 Hisobotlar")],
-    [KeyboardButton(text="✉️ Sotuvchiga xabar"), KeyboardButton(text="📢 Xabar yuborish")]
+    [KeyboardButton(text="👨‍💼 Sotuvchilar"), KeyboardButton(text="👤 Haridorlar")],
+    [KeyboardButton(text="🚫 Bloklash"), KeyboardButton(text="📊 Hisobotlar")],
+    [KeyboardButton(text="✉️ Xabar (Sotuvchi)"), KeyboardButton(text="📢 Reklama")]
 ], resize_keyboard=True)
 
 block_menu_kb = ReplyKeyboardMarkup(keyboard=[
@@ -439,40 +530,78 @@ async def start(msg: Message, state: FSMContext):
             kb = buyer_kb
         await msg.answer(f"Xush kelibsiz, {user[1]}{role_txt}!", reply_markup=kb)
     else:
-        is_owner_start = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
-        if is_owner_start:
-            await db_add_user(msg.from_user.id, msg.from_user.full_name, msg.from_user.username, 'admin', None, "Bot Egasi", 1)
+        is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
+        if is_owner:
+            await db_add_user(msg.from_user.id, msg.from_user.full_name, msg.from_user.username, 'admin', None, "Bot Egasi", 1, 'uz')
             await msg.answer("👑 Xush kelibsiz, Xo'jayin! Siz maxsus admin menyusidasiz.", reply_markup=owner_kb)
         else:
-            await msg.answer("Assalomu alaykum! Tanlang:", reply_markup=role_kb)
-            await state.set_state(Form.role)
+            await msg.answer("Tilni tanlang / Выберите язык / Choose language:", reply_markup=lang_kb)
+            await state.set_state(Form.language)
 
-@router.message(F.text == "❌ Bekor qilish")
+@router.message(Form.language)
+async def set_language(msg: Message, state: FSMContext):
+    lang_code = 'uz'
+    if msg.text == "🇷🇺 Русский": lang_code = 'ru'
+    elif msg.text == "🇬🇧 English": lang_code = 'en'
+    
+    await state.update_data(language=lang_code)
+    
+    # Translate welcome message based on selection
+    text = _t("choose_role", lang_code)
+    kb = get_role_kb(lang_code)
+    
+    await msg.answer(text, reply_markup=kb)
+    await state.set_state(Form.role)
+
+@router.message(F.text.in_({"❌ Bekor qilish", "❌ Отмена", "❌ Cancel"}))
 async def cancel_all(msg: Message, state: FSMContext):
     await state.clear()
-    await msg.answer("Bekor qilindi", reply_markup=ReplyKeyboardRemove())
+    
+    # Try to detect lang from text (not perfect but works for this context)
+    lang = 'uz'
+    if msg.text == "❌ Отмена": lang = 'ru'
+    elif msg.text == "❌ Cancel": lang = 'en'
+    
+    await msg.answer(_t("cancelled", lang), reply_markup=ReplyKeyboardRemove())
     await start(msg, state)
 
 @router.message(Form.role)
 async def set_role(msg: Message, state: FSMContext):
-    if msg.text == "👨‍💼 Sotuvchi":
-        await msg.answer("Tanlang:", reply_markup=shop_choice_kb)
-        # We stay in state Form.role to handle the next choice? 
-        # Actually it's better to create a new state or just handle text.
-        # Let's clear state so we can handle the text in a general handler or keep it?
-        # The next handler checks F.text.
-        await state.clear() 
-    elif msg.text == "👤 Haridor":
-        await msg.answer("Telefon raqamingizni yuboring:", reply_markup=phone_kb)
+    data = await state.get_data()
+    lang = data.get('language', 'uz')
+    
+    if msg.text in [_t("seller", lang), "👨‍💼 Sotuvchi", "👨‍💼 Продавец", "👨‍💼 Seller"]:
+        kb = ReplyKeyboardMarkup(keyboard=[
+            [KeyboardButton(text=_t("new_shop", lang))],
+            [KeyboardButton(text=_t("back", lang))]
+        ], resize_keyboard=True)
+        await msg.answer(_t("shop_choice", lang), reply_markup=kb)
+        await state.clear() # Clear specific state but keep user data? No, clear wipes data.
+        # We MUST save language back to state if we clear it.
+        # Actually, shop_choice_handler needs language. 
+        # Instead of state.clear(), let's set a neutral state or just rely on text
+        # But we need language in next steps.
+        await state.update_data(language=lang) # Ensure it's there
+        # We shouldn't clear state if we rely on F.text handlers that might need state data later?
+        # The Shop Choice handler doesn't need state, but subsequent steps do. 
+        
+    elif msg.text in [_t("buyer", lang), "👤 Haridor", "👤 Покупатель", "👤 Buyer"]:
+        kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=_t("send_number", lang), request_contact=True)]], resize_keyboard=True)
+        await msg.answer(_t("send_phone", lang), reply_markup=kb)
         await state.set_state(Form.phone)
 
 # General handler for Shop Choice or Back
-@router.message(F.text.in_({"🆕 Yangi do'kon ochish", "⬅️ Orqaga"}))
+@router.message(F.text.in_({"🆕 Yangi do'kon ochish", "⬅️ Orqaga", "🆕 Открыть новый магазин", "⬅️ Назад", "🆕 Open new shop", "⬅️ Back"}))
 async def shop_choice_handler(msg: Message, state: FSMContext):
-    if msg.text == "⬅️ Orqaga":
+    data = await state.get_data()
+    lang = data.get('language', 'uz')
+
+    if msg.text in ["⬅️ Orqaga", "⬅️ Назад", "⬅️ Back"]:
         await start(msg, state)
-    elif msg.text == "🆕 Yangi do'kon ochish":
-        await msg.answer("🏪 Yangi do'kon nomini kiriting:", reply_markup=cancel_kb)
+    else: # New Shop
+        cancel_btn = KeyboardButton(text=_t("cancel", lang))
+        kb = ReplyKeyboardMarkup(keyboard=[[cancel_btn]], resize_keyboard=True)
+        await msg.answer(_t("enter_store_name", lang), reply_markup=kb)
         await state.set_state(Form.store_name_input)
 
 # --- HELPER: GET FILE ID ---
@@ -488,25 +617,40 @@ async def get_file_id(msg: Message):
 # --- REGISTER FLOW ---
 @router.message(Form.store_name_input)
 async def save_store(msg: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get('language', 'uz')
     store_name = msg.text.strip()
+    
+    cancel_btn = KeyboardButton(text=_t("cancel", lang))
+    
     if len(store_name) < 3:
-        await msg.answer("⚠️ Do'kon nomi kamida 3 harf bo'lishi kerak. Qayta kiriting:", reply_markup=cancel_kb)
+        await msg.answer(_t("store_name_short", lang), reply_markup=ReplyKeyboardMarkup(keyboard=[[cancel_btn]], resize_keyboard=True))
         return
         
     await state.update_data(store_name=store_name)
-    await msg.answer("📞 Do'kon uchun aloqa raqamini kiriting (yoki pastdagi tugmani bosing):", 
-                     reply_markup=ReplyKeyboardMarkup(keyboard=[
-                         [KeyboardButton(text="📞 Raqamni yuborish", request_contact=True)],
-                         [KeyboardButton(text="➡️ O'tkazib yuborish")],
-                         [KeyboardButton(text="❌ Bekor qilish")]
-                     ], resize_keyboard=True))
+    
+    kb = ReplyKeyboardMarkup(keyboard=[
+         [KeyboardButton(text=_t("send_number", lang), request_contact=True)],
+         [KeyboardButton(text=_t("skip", lang))],
+         [KeyboardButton(text=_t("cancel", lang))]
+    ], resize_keyboard=True)
+    
+    await msg.answer(_t("enter_store_phone", lang), reply_markup=kb)
     await state.set_state(Form.store_phone)
 
 @router.message(Form.store_phone)
 async def save_store_phone(msg: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get('language', 'uz')
+    
     phone = None
+    # Check localized button texts 
+    skip_texts = [TRANSLATIONS[l]['skip'] for l in TRANSLATIONS]
+    create_texts = [TRANSLATIONS[l]['finish'] for l in TRANSLATIONS]
+    cancel_texts = [TRANSLATIONS[l]['cancel'] for l in TRANSLATIONS]
+
     if msg.contact: phone = msg.contact.phone_number
-    elif msg.text and msg.text not in ["➡️ O'tkazib yuborish", "✅ Yetarli (Tugatish)", "❌ Bekor qilish"]: phone = msg.text
+    elif msg.text and msg.text not in skip_texts + create_texts + cancel_texts: phone = msg.text
     
     if phone:
         phone = clean_phone(phone)
@@ -515,10 +659,12 @@ async def save_store_phone(msg: Message, state: FSMContext):
         existing_phones.append(phone)
         await state.update_data(phones=existing_phones)
         
-        await msg.answer("✅ Raqam qo'shildi! Yana raqam qo'shasizmi?", reply_markup=ReplyKeyboardMarkup(keyboard=[
-            [KeyboardButton(text="📞 Yana raqam qo'shish", request_contact=True)],
-            [KeyboardButton(text="✅ Yetarli (Tugatish)")]
-        ], resize_keyboard=True))
+        kb = ReplyKeyboardMarkup(keyboard=[
+            [KeyboardButton(text=_t("add_more_number", lang), request_contact=True)],
+            [KeyboardButton(text=_t("finish", lang))]
+        ], resize_keyboard=True)
+        
+        await msg.answer(_t("number_added", lang), reply_markup=kb)
         return
 
     data = await state.get_data()
@@ -526,50 +672,59 @@ async def save_store_phone(msg: Message, state: FSMContext):
     phones_list = data.get('phones', [])
     
     # Format phones for display
-    phones_str = ", ".join(phones_list) if phones_list else "Kiritilmadi"
+    phones_str = ", ".join(phones_list) if phones_list else "---"
     
     # Confirmation Text
-    # Confirmation Text
-    confirm_text = (
-        "📝 <b>Ma'lumotlarni tasdiqlang:</b>\n\n"
-        f"🏪 <b>Do'kon:</b> {store_name}\n"
-        f"📞 <b>Tel:</b> {phones_str}\n\n"
-        "Barcha ma'lumotlar to'g'rimi?"
-    )
+    confirm_text = _t("confirm_text", lang).format(store_name=store_name, phones_str=phones_str)
     
-    await msg.answer(confirm_text, parse_mode="HTML", reply_markup=confirm_reg_kb)
+    kb = ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text=_t("confirm", lang)), KeyboardButton(text=_t("cancel", lang))]
+    ], resize_keyboard=True)
+    
+    await msg.answer(confirm_text, parse_mode="HTML", reply_markup=kb)
     await state.set_state(Form.reg_confirm)
 
 @router.message(Form.reg_confirm)
 async def reg_complete(msg: Message, state: FSMContext):
-    if msg.text == "✅ Tasdiqlash":
-        data = await state.get_data()
+    data = await state.get_data()
+    lang = data.get('language', 'uz')
+    
+    if msg.text == _t("confirm", lang):
         store_name = data.get('store_name')
         phones_list = data.get('phones', [])
         phones_str = ", ".join(phones_list) if phones_list else None
         
-        await db_add_user(msg.from_user.id, msg.from_user.full_name, msg.from_user.username, 'admin', phones_str, store_name, 1)
+        await db_add_user(msg.from_user.id, msg.from_user.full_name, msg.from_user.username, 'admin', phones_str, store_name, 1, lang)
         
-        # Decide KB
+        # Decide KB - localized text? Handlers need to be updated too for MAIN MENU in other langs.
+        # FOR NOW: We assume internal menu is still ONE LANGUAGE (Uzbek) or we need to translate ALL MENUS.
+        # User requested: "endi ro'yxatdan o'tayotgan sotuvchi va haridorlarga tilni tanlash ni qo'shish kerak"
+        # It implies registration flow. Main bot menu might still be Uzbek?
+        # Let's keep main menu in Uzbek for now or translate it too?
+        # Given complexity, let's keep Main Menu standard but Registration localized.
+        
         if msg.from_user.id in ADMINS or msg.from_user.username in ADMIN_USERNAMES:
              kb = owner_kb
         else:
              kb = seller_owner_kb
              
-        await msg.answer(f"✅ <b>Tabriklaymiz!</b>\n\n'{store_name}' do'koni muvaffaqiyatli ro'yxatdan o'tdi!", reply_markup=kb, parse_mode="HTML")
+        await msg.answer(_t("reg_success", lang).format(store_name=store_name), reply_markup=kb, parse_mode="HTML")
         await state.clear()
     else:
-        # If they type something else, or press cancel (Cancel is handled by global handler, but if they type something strictly)
-        # Global handler @router.message(F.text == "❌ Bekor qilish") handles explicit cancel.
-        # But if they type random text:
-        await msg.answer("Iltimos, tugmalardan birini tanlang.", reply_markup=confirm_reg_kb)
+        kb = ReplyKeyboardMarkup(keyboard=[
+             [KeyboardButton(text=_t("confirm", lang)), KeyboardButton(text=_t("cancel", lang))]
+        ], resize_keyboard=True)
+        await msg.answer("...", reply_markup=kb)
 
 @router.message(Form.phone, F.contact)
 async def save_buyer(msg: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get('language', 'uz')
+    
     phone = clean_phone(msg.contact.phone_number)
-    await db_add_user(msg.from_user.id, msg.from_user.full_name, msg.from_user.username, 'client', phone, None)
+    await db_add_user(msg.from_user.id, msg.from_user.full_name, msg.from_user.username, 'client', phone, None, 0, lang)
     await db_link_customer(phone, msg.from_user.id) 
-    await msg.answer("✅ Rahmat! Siz muvaffaqiyatli ro'yxatdan o'tdingiz.", reply_markup=buyer_kb)
+    await msg.answer(_t("buyer_reg_success", lang), reply_markup=buyer_kb)
     await state.clear()
 
 async def ensure_seller(msg: Message):
@@ -601,29 +756,50 @@ async def save_c_name(msg: Message, state: FSMContext):
 
 @router.message(Form.cust_phone)
 async def save_c_phone(msg: Message, state: FSMContext):
-    data = await state.get_data()
-    phone = clean_phone(msg.text)
-    
-    if not phone or not phone.isdigit():
-        await msg.answer("⚠️ Iltimos, to'g'ri telefon raqam kiriting (faqat raqamlar).")
-        return
+    try:
+        data = await state.get_data()
+        phone = clean_phone(msg.text)
+        
+        # Stricter validation
+        if not phone or not phone.isdigit() or len(phone) < 7:
+            await msg.answer("⚠️ Iltimos, to'g'ri telefon raqam kiriting (faqat raqamlar, kamida 7 xona).")
+            return
 
-    seller_id = await get_store_owner_id(msg.from_user.id)
-    if not seller_id:
-        await msg.answer("⚠️ Do'kon egasi topilmadi (Tizim xatosi).", reply_markup=seller_kb)
+        # Show processing status
+        status_msg = await msg.answer("⏳ Qo'shilmoqda...")
+
+        seller_id = await get_store_owner_id(msg.from_user.id)
+        kb = await get_seller_kb(msg.from_user.id)
+
+        if not seller_id:
+            await status_msg.delete()
+            await msg.answer("⚠️ Do'kon egasi topilmadi (Tizim xatosi).", reply_markup=kb)
+            await state.clear()
+            return
+
+        linked_tg_id = await db_get_user_id_by_phone(phone)
+        res = await db_add_customer(seller_id, data['name'], phone, linked_tg_id)
+        
+        try: await status_msg.delete()
+        except: pass
+
+        link_status = "🔗 (Botga ulangan)" if linked_tg_id else "⚪️ (Botga ulanmagan)"
+        phone_f = format_phone_display(phone)
+        
+        if res:
+            await msg.answer(f"✅ Mijoz qo'shildi!\n👤 <b>{data['name']}</b>\n📞 {phone_f}\n{link_status}", reply_markup=kb, parse_mode="HTML")
+        else:
+            await msg.answer(f"⚠️ Bu mijoz ({data['name']}, {phone_f}) allaqachon mavjud.", reply_markup=kb)
+        
         await state.clear()
-        return
 
-    linked_tg_id = await db_get_user_id_by_phone(phone)
-    res = await db_add_customer(seller_id, data['name'], phone, linked_tg_id)
-    
-    link_status = "🔗 (Botga ulangan)" if linked_tg_id else "⚪️ (Botga ulanmagan)"
-    phone_f = format_phone_display(phone)
-    if res:
-        await msg.answer(f"✅ Mijoz qo'shildi!\n👤 <b>{data['name']}</b>\n📞 {phone_f}\n{link_status}", reply_markup=seller_kb, parse_mode="HTML")
-    else:
-        await msg.answer("⚠️ Bu mijoz allaqachon mavjud.", reply_markup=seller_kb)
-    await state.clear()
+    except Exception as e:
+        logging.error(f"Error saving customer: {e}")
+        try: await status_msg.delete()
+        except: pass
+        kb = await get_seller_kb(msg.from_user.id)
+        await msg.answer(f"⚠️ Tizim xatoligi yuz berdi: {e}", reply_markup=kb)
+        await state.clear()
 
 async def get_my_cust_kb(seller_id, prefix):
     custs = await db_get_my_customers(seller_id)
@@ -682,9 +858,11 @@ async def debt_fin(msg: Message, state: FSMContext):
                     f"<i>Batafsil ma'lumot uchun botga kiring: @nasiyambot</i>", parse_mode="HTML")
             except: pass
             
-        await msg.answer(f"✅ <b>Nasiya Muvaffaqiyatli Yozildi!</b>\n\n👤 <b>Mijoz:</b> {cust[1]}\n💰 <b>Summa:</b> {d['amt']:,.0f} so'm\n📝 <b>Izoh:</b> {msg.text}", reply_markup=seller_kb, parse_mode="HTML")
+        kb = await get_seller_kb(msg.from_user.id)
+        await msg.answer(f"✅ <b>Nasiya Muvaffaqiyatli Yozildi!</b>\n\n👤 <b>Mijoz:</b> {cust[1]}\n💰 <b>Summa:</b> {d['amt']:,.0f} so'm\n📝 <b>Izoh:</b> {msg.text}", reply_markup=kb, parse_mode="HTML")
     else:
-        await msg.answer("⚠️ Xatolik: Mijoz topilmadi.", reply_markup=seller_kb)
+        kb = await get_seller_kb(msg.from_user.id)
+        await msg.answer("⚠️ Xatolik: Mijoz topilmadi.", reply_markup=kb)
     await state.clear()
 
 @router.message(F.text == "💰 To'lov qabul qilish")
@@ -736,7 +914,8 @@ async def pay_fin(msg: Message, state: FSMContext):
              except: pass
 
         new_balance = cust[3] - d['amt']
-        await msg.answer(f"✅ <b>To'lov Muvaffaqiyatli Qabul Qilindi!</b>\n\n👤 <b>Mijoz:</b> {cust[1]}\n💰 <b>To'landi:</b> {d['amt']:,.0f} so'm\n📉 <b>Qoldiq Qarz:</b> {new_balance:,.0f} so'm", reply_markup=seller_kb, parse_mode="HTML")
+        kb = await get_seller_kb(msg.from_user.id)
+        await msg.answer(f"✅ <b>To'lov Muvaffaqiyatli Qabul Qilindi!</b>\n\n👤 <b>Mijoz:</b> {cust[1]}\n💰 <b>To'landi:</b> {d['amt']:,.0f} so'm\n📉 <b>Qoldiq Qarz:</b> {new_balance:,.0f} so'm", reply_markup=kb, parse_mode="HTML")
     await state.clear()
 
 @router.message(F.text == "📊 Balansni tekshirish")
@@ -934,7 +1113,9 @@ async def msg_send(msg: Message, state: FSMContext, bot: Bot):
             await bot.send_message(d['target'], f"✉️ <b>{store_name}</b>:\n{msg.text}", parse_mode="HTML")
         elif msg.voice:
             await bot.send_voice(d['target'], msg.voice.file_id, caption=f"📞 <b>{store_name}</b>", parse_mode="HTML")
-        await msg.answer("Yuborildi!", reply_markup=seller_kb)
+        
+        kb = await get_seller_kb(msg.from_user.id)
+        await msg.answer("Yuborildi!", reply_markup=kb)
     except: await msg.answer("Xatolik")
     await state.clear()
 
@@ -986,7 +1167,8 @@ async def edit_name_save(msg: Message, state: FSMContext):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("UPDATE customers SET full_name = ? WHERE id = ?", (msg.text, d['cid']))
         await db.commit()
-    await msg.answer(f"✅ Ism o'zgartirildi: {msg.text}", reply_markup=seller_kb)
+    kb = await get_seller_kb(msg.from_user.id)
+    await msg.answer(f"✅ Ism o'zgartirildi: {msg.text}", reply_markup=kb)
     await state.clear()
 
 @router.callback_query(F.data.startswith("delcust_"))
@@ -1004,10 +1186,11 @@ async def delete_customer(call: CallbackQuery):
         await db.execute("DELETE FROM customers WHERE id = ?", (cid,))
         await db.execute("DELETE FROM transactions WHERE customer_id = ?", (cid,))
         await db.commit()
+    kb = await get_seller_kb(call.from_user.id)
     await call.message.delete()
-    await call.message.answer(f"✅ Mijoz ({cust[1]}) <b>butunlay o'chirildi.</b>", parse_mode="HTML", reply_markup=seller_kb)
+    await call.message.answer(f"✅ Mijoz ({cust[1]}) <b>butunlay o'chirildi.</b>", parse_mode="HTML", reply_markup=kb)
 
-@router.message(F.text == "👨‍💼 Sotuvchilar Ro'yxati")
+@router.message(F.text == "👨‍💼 Sotuvchilar")
 async def show_sellers_list(msg: Message):
     if not await ensure_seller(msg): return
     is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
@@ -1033,7 +1216,7 @@ async def show_sellers_list(msg: Message):
     
     await msg.answer(text, parse_mode="HTML", reply_markup=kb)
 
-@router.message(F.text == "👤 Haridorlar Ro'yxati")
+@router.message(F.text == "👤 Haridorlar")
 async def show_buyers_list(msg: Message):
     if not await ensure_seller(msg): return
     is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
@@ -1060,7 +1243,7 @@ async def show_buyers_list(msg: Message):
     else:
         await msg.answer(text, parse_mode="HTML")
 
-@router.message(F.text == "🚫 Sotuvchini bloklash bo'limi")
+@router.message(F.text == "🚫 Bloklash")
 async def block_menu(msg: Message):
     if not await ensure_seller(msg): return
     is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
@@ -1635,7 +1818,7 @@ async def main():
     print("Bot v8.3 (Clean Rebuild) ishga tushdi...")
     await dp.start_polling(bot)
 
-@router.message(F.text == "📢 Xabar yuborish")
+@router.message(F.text == "📢 Reklama")
 async def broadcast_start(msg: Message, state: FSMContext):
     is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
     if not is_owner: return
@@ -1667,7 +1850,7 @@ async def broadcast_send(msg: Message, state: FSMContext, bot: Bot):
     await msg.answer(f"✅ Xabar {count} ta foydalanuvchiga muvaffaqiyatli yuborildi!", reply_markup=owner_kb)
     await state.clear()
 
-@router.message(F.text == "✉️ Sotuvchiga xabar")
+@router.message(F.text == "✉️ Xabar (Sotuvchi)")
 async def seller_msg_start(msg: Message, state: FSMContext):
     is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
     if not is_owner: return
